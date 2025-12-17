@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Book Reader Mini App</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/epubjs/dist/epub.min.js"></script>
+  <style>
+    :root {
+      --bg: #0f1116;
+      --panel: #151823;
+      --accent: #4c9aff;
+      --accent-strong: #2f7ee5;
+      --text: #f7f8fb;
+      --muted: #a5afc4;
+      --border: #1f2433;
+      --success: #36c87a;
+      font-family: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      justify-content: center;
+    }
+
+    #app {
+      width: min(1200px, 100vw);
+      min-height: 100vh;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+
+    header {
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: 0.2px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .subtitle {
+      color: var(--muted);
+      font-size: 14px;
+      font-weight: 500;
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 16px;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.15);
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    .primary-btn {
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
+      color: #fff;
+      border: none;
+      border-radius: 14px;
+      padding: 16px;
+      font-size: 16px;
+      font-weight: 700;
+      width: 100%;
+      cursor: pointer;
+      box-shadow: 0 12px 30px rgba(44, 115, 255, 0.25);
+      transition: transform 0.1s ease, box-shadow 0.2s ease;
+    }
+
+    .primary-btn:active {
+      transform: translateY(1px);
+      box-shadow: 0 8px 20px rgba(44, 115, 255, 0.25);
+    }
+
+    .book-list {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-top: 12px;
+    }
+
+    .book-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px;
+      background: #0c0e14;
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      cursor: pointer;
+      transition: border 0.2s ease, transform 0.1s ease;
+    }
+
+    .book-item:hover {
+      border-color: var(--accent);
+    }
+
+    .book-item:active {
+      transform: translateY(1px);
+    }
+
+    .book-meta {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .book-title {
+      font-size: 15px;
+      font-weight: 700;
+    }
+
+    .book-subtitle {
+      color: var(--muted);
+      font-size: 12px;
+    }
+
+    .reader {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      min-height: calc(100vh - 48px);
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .toolbar .group {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+
+    .btn {
+      background: var(--panel);
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 10px 12px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: border 0.2s ease, transform 0.1s ease, background 0.2s ease;
+    }
+
+    .btn:hover {
+      border-color: var(--accent);
+    }
+
+    .btn:active {
+      transform: translateY(1px);
+    }
+
+    .btn.primary {
+      background: var(--accent);
+      border-color: var(--accent-strong);
+      color: #fff;
+    }
+
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    #viewer {
+      background: #0c0e14;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      flex: 1;
+      min-height: 60vh;
+      overflow: hidden;
+      position: relative;
+    }
+
+    .toc-panel {
+      position: fixed;
+      inset: 0;
+      background: rgba(10, 12, 18, 0.85);
+      backdrop-filter: blur(6px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10;
+    }
+
+    .toc-content {
+      width: min(420px, 90vw);
+      max-height: 70vh;
+      background: #0c0e14;
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      overflow: hidden;
+    }
+
+    .toc-list {
+      overflow: auto;
+      max-height: 52vh;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .toc-item {
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      cursor: pointer;
+      background: #0f121b;
+      transition: border 0.2s ease, transform 0.1s ease;
+    }
+
+    .toc-item:hover {
+      border-color: var(--accent);
+    }
+
+    .toc-item:active {
+      transform: translateY(1px);
+    }
+
+    .toast {
+      position: fixed;
+      bottom: 14px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #0c0e14;
+      color: #fff;
+      padding: 12px 14px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.3);
+      z-index: 20;
+      min-width: 220px;
+      text-align: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.2s ease, transform 0.2s ease;
+    }
+
+    .toast.visible {
+      opacity: 1;
+      pointer-events: auto;
+      transform: translateX(-50%) translateY(-6px);
+    }
+
+    .loader {
+      display: none;
+      align-items: center;
+      gap: 8px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+
+    .loader .dot {
+      width: 8px;
+      height: 8px;
+      background: var(--accent);
+      border-radius: 50%;
+      animation: pulse 1s infinite;
+    }
+
+    .loader .dot:nth-child(2) {
+      animation-delay: 0.1s;
+    }
+
+    .loader .dot:nth-child(3) {
+      animation-delay: 0.2s;
+    }
+
+    @keyframes pulse {
+      0% { opacity: 0.2; transform: scale(0.9); }
+      50% { opacity: 1; transform: scale(1); }
+      100% { opacity: 0.2; transform: scale(0.9); }
+    }
+
+    .hint {
+      color: var(--muted);
+      font-size: 13px;
+      margin-top: 10px;
+    }
+
+    @media (max-width: 640px) {
+      header { font-size: 18px; }
+      .btn { padding: 9px 11px; }
+      .primary-btn { padding: 14px; }
+      #app { padding: 12px; }
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <header>
+      <div>
+        Book Reader
+        <div class="subtitle">Telegram Mini App · EPUB first</div>
+      </div>
+      <div class="loader" id="global-loader">
+        <div class="dot"></div>
+        <div class="dot"></div>
+        <div class="dot"></div>
+        <span>Working…</span>
+      </div>
+    </header>
+
+    <section id="library-screen" class="card">
+      <button class="primary-btn" id="addBookBtn">Add book</button>
+      <input type="file" id="fileInput" accept=".epub" hidden />
+      <div class="book-list" id="bookList"></div>
+      <div class="hint">Supports EPUB. FB2/MOBI import requires server conversion — coming next.</div>
+    </section>
+
+    <section id="reader-screen" class="reader hidden card">
+      <div class="toolbar">
+        <button class="btn" id="backBtn">← Library</button>
+        <div class="group" style="flex:1; min-width: 200px;">
+          <div class="book-title" id="readerTitle">Loading…</div>
+        </div>
+        <div class="group">
+          <button class="btn" id="tocBtn">Table of contents</button>
+          <button class="btn" id="prevBtn">◀ Prev</button>
+          <button class="btn" id="nextBtn">Next ▶</button>
+        </div>
+      </div>
+      <div id="viewer"></div>
+    </section>
+  </div>
+
+  <div class="toast" id="toast"></div>
+  <div id="tocOverlay" class="toc-panel hidden" role="dialog" aria-modal="true">
+    <div class="toc-content">
+      <div style="display:flex; justify-content: space-between; align-items:center; gap: 8px;">
+        <div class="book-title" style="font-size:16px;">Table of contents</div>
+        <button class="btn" id="closeToc">Close</button>
+      </div>
+      <div class="toc-list" id="tocList"></div>
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      const dbName = 'bookReaderDB';
+      const storeName = 'books';
+      let db;
+      let currentBook = null;
+      let rendition = null;
+      let books = [];
+      let currentBookId = null;
+      const telegram = window.Telegram && window.Telegram.WebApp ? window.Telegram.WebApp : null;
+
+      const ui = {
+        libraryScreen: document.getElementById('library-screen'),
+        readerScreen: document.getElementById('reader-screen'),
+        bookList: document.getElementById('bookList'),
+        addBtn: document.getElementById('addBookBtn'),
+        fileInput: document.getElementById('fileInput'),
+        backBtn: document.getElementById('backBtn'),
+        viewer: document.getElementById('viewer'),
+        readerTitle: document.getElementById('readerTitle'),
+        prevBtn: document.getElementById('prevBtn'),
+        nextBtn: document.getElementById('nextBtn'),
+        tocBtn: document.getElementById('tocBtn'),
+        tocOverlay: document.getElementById('tocOverlay'),
+        tocList: document.getElementById('tocList'),
+        closeToc: document.getElementById('closeToc'),
+        toast: document.getElementById('toast'),
+        loader: document.getElementById('global-loader'),
+      };
+
+      function logInfo(...args) {
+        console.log('[BookReader]', ...args);
+      }
+
+      function logError(...args) {
+        console.error('[BookReader]', ...args);
+      }
+
+      function showToast(message) {
+        ui.toast.textContent = message;
+        ui.toast.classList.add('visible');
+        setTimeout(() => ui.toast.classList.remove('visible'), 2500);
+      }
+
+      function setLoading(isLoading) {
+        ui.loader.style.display = isLoading ? 'flex' : 'none';
+      }
+
+      function nextFrame() {
+        return new Promise((resolve) => requestAnimationFrame(resolve));
+      }
+
+      function getViewerSize() {
+        const width = ui.viewer ? ui.viewer.clientWidth : 0;
+        const height = ui.viewer ? ui.viewer.clientHeight : 0;
+        return {
+          width: width || 800,
+          height: height || 600,
+        };
+      }
+
+      function isEpubBuffer(buffer) {
+        if (!buffer) return false;
+        const bytes = new Uint8Array(buffer.slice(0, 2));
+        return bytes[0] === 0x50 && bytes[1] === 0x4b; // PK signature for ZIP/EPUB
+      }
+
+      function openDb() {
+        return new Promise((resolve, reject) => {
+          const request = indexedDB.open(dbName, 1);
+          request.onupgradeneeded = (event) => {
+            const database = event.target.result;
+            if (!database.objectStoreNames.contains(storeName)) {
+              const store = database.createObjectStore(storeName, { keyPath: 'id' });
+              store.createIndex('addedAt', 'addedAt', { unique: false });
+            }
+          };
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+      }
+
+      function dbTransaction(mode) {
+        const tx = db.transaction(storeName, mode);
+        return tx.objectStore(storeName);
+      }
+
+      function listBooks() {
+        return new Promise((resolve, reject) => {
+          const store = dbTransaction('readonly');
+          const request = store.getAll();
+          request.onsuccess = () => resolve(request.result.sort((a, b) => b.addedAt - a.addedAt));
+          request.onerror = () => reject(request.error);
+        });
+      }
+
+      function getBook(id) {
+        return new Promise((resolve, reject) => {
+          const store = dbTransaction('readonly');
+          const request = store.get(id);
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+      }
+
+      function saveBook(book) {
+        return new Promise((resolve, reject) => {
+          const store = dbTransaction('readwrite');
+          const request = store.put(book);
+          request.onsuccess = () => resolve();
+          request.onerror = () => reject(request.error);
+        });
+      }
+
+      function updateLocation(id, location) {
+        return getBook(id).then((book) => {
+          if (!book) return;
+          book.lastLocation = location;
+          return saveBook(book);
+        });
+      }
+
+      function renderLibrary() {
+        ui.bookList.innerHTML = '';
+        if (!books.length) {
+          const empty = document.createElement('div');
+          empty.className = 'hint';
+          empty.textContent = 'No books yet. Add an EPUB to start reading.';
+          ui.bookList.appendChild(empty);
+          return;
+        }
+
+        books.forEach((book) => {
+          const item = document.createElement('div');
+          item.className = 'book-item';
+          const meta = document.createElement('div');
+          meta.className = 'book-meta';
+
+          const title = document.createElement('div');
+          title.className = 'book-title';
+          title.textContent = book.name || 'Untitled';
+          meta.appendChild(title);
+
+          const subtitle = document.createElement('div');
+          subtitle.className = 'book-subtitle';
+          const last = book.lastLocation ? 'Resume reading' : 'New book';
+          const date = new Date(book.addedAt || Date.now()).toLocaleDateString();
+          subtitle.textContent = `${last} · Added ${date}`;
+          meta.appendChild(subtitle);
+
+          item.appendChild(meta);
+          item.addEventListener('click', () => openBook(book.id));
+          ui.bookList.appendChild(item);
+        });
+      }
+
+      async function refreshLibrary() {
+        try {
+          books = await listBooks();
+          renderLibrary();
+        } catch (err) {
+          logError(err);
+          showToast('Could not load library');
+        }
+      }
+
+      function switchScreen(showReader) {
+        ui.libraryScreen.classList.toggle('hidden', showReader);
+        ui.readerScreen.classList.toggle('hidden', !showReader);
+      }
+
+      function destroyCurrentBook() {
+        if (rendition) {
+          rendition.destroy();
+          rendition = null;
+        }
+        currentBook = null;
+        currentBookId = null;
+        ui.viewer.innerHTML = '';
+      }
+
+      async function openBook(id) {
+        try {
+          setLoading(true);
+          logInfo('Opening book', id);
+          const record = await getBook(id);
+          if (!record) {
+            showToast('Book not found');
+            setLoading(false);
+            return;
+          }
+          destroyCurrentBook();
+          currentBookId = id;
+          ui.readerTitle.textContent = record.name || 'Book';
+          switchScreen(true);
+          await nextFrame();
+
+          const { width, height } = getViewerSize();
+          currentBook = ePub(record.data);
+          currentBook.on('openFailed', (error) => {
+            logError('EPUB open failed', error);
+            showToast('Unable to open EPUB. Check console for details.');
+            destroyCurrentBook();
+            switchScreen(false);
+            setLoading(false);
+          });
+          rendition = currentBook.renderTo(ui.viewer, { width, height });
+
+          rendition.on('rendered', () => {
+            // Resize after rendering to fill container
+            setTimeout(() => {
+              if (rendition) {
+                const size = getViewerSize();
+                rendition.resize(size.width, size.height);
+              }
+            }, 30);
+          });
+
+          rendition.on('relocated', (location) => {
+            const cfi = location && location.start && location.start.cfi;
+            if (cfi) {
+              updateLocation(id, cfi).catch(logError);
+            }
+          });
+
+          const startAt = record.lastLocation || undefined;
+          await rendition.display(startAt);
+          attachToc();
+          setLoading(false);
+          if (telegram) {
+            telegram.expand && telegram.expand();
+          }
+        } catch (err) {
+          logError('Failed to open book', err);
+          setLoading(false);
+          showToast('Unable to open EPUB. Check console for details.');
+          destroyCurrentBook();
+          switchScreen(false);
+        }
+      }
+
+      function attachToc() {
+        if (!currentBook) return;
+        currentBook.loaded.navigation.then((nav) => {
+          ui.tocList.innerHTML = '';
+          const toc = nav && nav.toc ? nav.toc : [];
+          if (!toc.length) {
+            const info = document.createElement('div');
+            info.className = 'hint';
+            info.textContent = 'No table of contents found.';
+            ui.tocList.appendChild(info);
+            return;
+          }
+
+          toc.forEach((item) => {
+            const entry = document.createElement('div');
+            entry.className = 'toc-item';
+            entry.textContent = item.label;
+            entry.addEventListener('click', () => {
+              rendition.display(item.href);
+              toggleToc(false);
+            });
+            ui.tocList.appendChild(entry);
+          });
+        }).catch(logError);
+      }
+
+      function toggleToc(show) {
+        ui.tocOverlay.classList.toggle('hidden', show === false);
+      }
+
+      async function handleImport(file) {
+        const ext = (file.name.split('.').pop() || '').toLowerCase();
+        logInfo('Selected file', file.name, 'type:', file.type || 'n/a', 'size:', file.size);
+
+        if (ext === 'fb2' || ext === 'mobi') {
+          showToast('FB2/MOBI import requires server conversion — coming next.');
+          return;
+        }
+        if (ext !== 'epub') {
+          showToast('Only EPUB files are supported right now.');
+          return;
+        }
+
+        let buffer;
+        try {
+          setLoading(true);
+          buffer = await file.arrayBuffer();
+        } catch (err) {
+          logError('Failed to read file', err);
+          showToast('Failed to read file');
+          setLoading(false);
+          return;
+        }
+
+        if (!isEpubBuffer(buffer)) {
+          showToast('This file is not a valid EPUB archive.');
+          logError('File failed EPUB validation', file.name);
+          setLoading(false);
+          return;
+        }
+
+        try {
+          const book = {
+            id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+            name: file.name || 'Untitled.epub',
+            addedAt: Date.now(),
+            data: buffer,
+            lastLocation: null,
+            mime: 'application/epub+zip',
+          };
+          await saveBook(book);
+          books.unshift(book);
+          renderLibrary();
+          showToast('Book added to your library');
+        } catch (err) {
+          logError('Could not import book', err);
+          showToast('Could not import book');
+        } finally {
+          setLoading(false);
+        }
+      }
+
+      function initTelegram() {
+        if (telegram) {
+          telegram.ready();
+          telegram.expand && telegram.expand();
+          telegram.MainButton && telegram.MainButton.hide();
+        }
+      }
+
+      function bindEvents() {
+        ui.addBtn.addEventListener('click', () => ui.fileInput.click());
+        ui.fileInput.addEventListener('change', (event) => {
+          const [file] = event.target.files;
+          if (file) {
+            handleImport(file);
+          }
+          ui.fileInput.value = '';
+        });
+
+        ui.backBtn.addEventListener('click', () => {
+          destroyCurrentBook();
+          switchScreen(false);
+          refreshLibrary();
+        });
+
+        ui.prevBtn.addEventListener('click', () => rendition && rendition.prev());
+        ui.nextBtn.addEventListener('click', () => rendition && rendition.next());
+
+        ui.tocBtn.addEventListener('click', () => toggleToc(true));
+        ui.closeToc.addEventListener('click', () => toggleToc(false));
+        ui.tocOverlay.addEventListener('click', (event) => {
+          if (event.target === ui.tocOverlay) toggleToc(false);
+        });
+
+        window.addEventListener('resize', () => {
+          if (rendition) {
+            const size = getViewerSize();
+            rendition.resize(size.width, size.height);
+          }
+        });
+      }
+
+      async function init() {
+        try {
+          initTelegram();
+          setLoading(true);
+          db = await openDb();
+          await refreshLibrary();
+        } catch (err) {
+          logError(err);
+          showToast('Storage is unavailable');
+        } finally {
+          setLoading(false);
+        }
+        bindEvents();
+      }
+
+      document.addEventListener('DOMContentLoaded', init);
+    })();
+  </script>
+</body>
+</html>
