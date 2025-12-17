@@ -326,6 +326,7 @@
 
     <section id="library-screen" class="card">
       <button class="primary-btn" id="addBookBtn">Add book</button>
+      <input type="file" id="fileInput" accept=".epub" hidden />
       <input type="file" id="fileInput" accept=".epub,.fb2,.mobi" hidden />
       <div class="book-list" id="bookList"></div>
       <div class="hint">Supports EPUB. FB2/MOBI import requires server conversion — coming next.</div>
@@ -388,6 +389,12 @@
         loader: document.getElementById('global-loader'),
       };
 
+      function logInfo(...args) {
+        console.log('[BookReader]', ...args);
+      }
+
+      function logError(...args) {
+        console.error('[BookReader]', ...args);
       function logError(err) {
         console.error('[BookReader]', err);
       }
@@ -402,6 +409,25 @@
         ui.loader.style.display = isLoading ? 'flex' : 'none';
       }
 
+      function nextFrame() {
+        return new Promise((resolve) => requestAnimationFrame(resolve));
+      }
+
+      function getViewerSize() {
+        const width = ui.viewer ? ui.viewer.clientWidth : 0;
+        const height = ui.viewer ? ui.viewer.clientHeight : 0;
+        return {
+          width: width || 800,
+          height: height || 600,
+        };
+      }
+
+      function isEpubBuffer(buffer) {
+        if (!buffer) return false;
+        const bytes = new Uint8Array(buffer.slice(0, 2));
+        return bytes[0] === 0x50 && bytes[1] === 0x4b; // PK signature for ZIP/EPUB
+      }
+        
       function openDb() {
         return new Promise((resolve, reject) => {
           const request = indexedDB.open(dbName, 1);
@@ -519,6 +545,12 @@
       async function openBook(id) {
         try {
           setLoading(true);
+          
+          logInfo('Opening book', id);
+          const record = await getBook(id);
+          if (!record) {
+            showToast('Book not found');
+            setLoading(false);
           const record = await getBook(id);
           if (!record) {
             showToast('Book not found');
@@ -527,6 +559,29 @@
           destroyCurrentBook();
           currentBookId = id;
           ui.readerTitle.textContent = record.name || 'Book';
+          switchScreen(true);
+          await nextFrame();
+
+          const { width, height } = getViewerSize();
+          currentBook = ePub(record.data);
+          currentBook.on('openFailed', (error) => {
+            logError('EPUB open failed', error);
+            showToast('Unable to open EPUB. Check console for details.');
+            destroyCurrentBook();
+            switchScreen(false);
+            setLoading(false);
+          });
+          rendition = currentBook.renderTo(ui.viewer, { width, height });
+
+          rendition.on('rendered', () => {
+            // Resize after rendering to fill container
+            setTimeout(() => {
+              if (rendition) {
+                const size = getViewerSize();
+                rendition.resize(size.width, size.height);
+              }
+            }, 30);
+
           currentBook = ePub(record.data);
           rendition = currentBook.renderTo(ui.viewer, { width: '100%', height: '100%' });
 
@@ -545,12 +600,19 @@
           const startAt = record.lastLocation || undefined;
           await rendition.display(startAt);
           attachToc();
+
           switchScreen(true);
           setLoading(false);
           if (telegram) {
             telegram.expand && telegram.expand();
           }
         } catch (err) {
+            
+          logError('Failed to open book', err);
+          setLoading(false);
+          showToast('Unable to open EPUB. Check console for details.');
+          destroyCurrentBook();
+          switchScreen(false);
           logError(err);
           setLoading(false);
           showToast('Unable to open book');
@@ -587,6 +649,11 @@
         ui.tocOverlay.classList.toggle('hidden', show === false);
       }
 
+
+      async function handleImport(file) {
+        const ext = (file.name.split('.').pop() || '').toLowerCase();
+        logInfo('Selected file', file.name, 'type:', file.type || 'n/a', 'size:', file.size);
+
       function handleImport(file) {
         const ext = (file.name.split('.').pop() || '').toLowerCase();
         if (ext === 'fb2' || ext === 'mobi') {
@@ -594,6 +661,47 @@
           return;
         }
         if (ext !== 'epub') {
+          showToast('Only EPUB files are supported right now.');
+          return;
+        }
+
+        let buffer;
+        try {
+          setLoading(true);
+          buffer = await file.arrayBuffer();
+        } catch (err) {
+          logError('Failed to read file', err);
+          showToast('Failed to read file');
+          setLoading(false);
+          return;
+        }
+
+        if (!isEpubBuffer(buffer)) {
+          showToast('This file is not a valid EPUB archive.');
+          logError('File failed EPUB validation', file.name);
+          setLoading(false);
+          return;
+        }
+
+        try {
+          const book = {
+            id: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()),
+            name: file.name || 'Untitled.epub',
+            addedAt: Date.now(),
+            data: buffer,
+            lastLocation: null,
+            mime: 'application/epub+zip',
+          };
+          await saveBook(book);
+          books.unshift(book);
+          renderLibrary();
+          showToast('Book added to your library');
+        } catch (err) {
+          logError('Could not import book', err);
+          showToast('Could not import book');
+        } finally {
+          setLoading(false);
+        }
           showToast('Only EPUB is supported right now.');
           return;
         }
@@ -626,6 +734,7 @@
           showToast('Failed to read file');
         };
         reader.readAsArrayBuffer(file);
+
       }
 
       function initTelegram() {
@@ -662,7 +771,13 @@
         });
 
         window.addEventListener('resize', () => {
+          if (rendition) {
+            const size = getViewerSize();
+            rendition.resize(size.width, size.height);
+          }
+
           if (rendition) rendition.resize();
+
         });
       }
 
